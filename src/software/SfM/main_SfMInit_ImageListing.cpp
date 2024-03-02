@@ -98,6 +98,31 @@ bool getGPS
   return false;
 }
 
+bool getImgDirection
+(
+  const std::string & filename,
+  Mat3 & pose_rotation
+)
+{
+  std::unique_ptr<Exif_IO> exifReader(new Exif_IO_EasyExif);
+  if (exifReader)
+  {
+    // Try to parse EXIF metada & check existence of EXIF data
+    if ( exifReader->open( filename ) && exifReader->doesHaveExifInfo() )
+    {
+      // Check existence of GPS coordinates
+      double direction;
+      if ( exifReader->GPSImgDirection( &direction ))
+      {
+        //need euler to rot matrix conversion
+        pose_rotation(0,0) = direction;
+        // Add rotation to the GPS rotation array
+        return(true);
+      }
+    }
+  }
+  return false;
+}
 
 /// Check string of prior weights
 std::pair<bool, Vec3> checkPriorWeightsString
@@ -402,7 +427,10 @@ int main(int argc, char **argv)
 
     // Build the view corresponding to the image
     Vec3 pose_center;
-    if (getGPS(sImageFilename, i_GPS_XYZ_method, pose_center) && b_Use_pose_prior)
+    Mat3 pose_rotation;
+    bool has_GPS = getGPS(sImageFilename, i_GPS_XYZ_method, pose_center);
+    bool has_ImgDirection = getImgDirection(sImageFilename, pose_rotation);
+    if ((has_GPS || has_ImgDirection) && b_Use_pose_prior)
     {
       ViewPriors v(*iter_image, views.size(), views.size(), views.size(), width, height);
 
@@ -419,14 +447,22 @@ int main(int argc, char **argv)
         intrinsics[v.id_intrinsic] = intrinsic;
       }
 
-      v.b_use_pose_center_ = true;
-      v.pose_center_ = pose_center;
-      // prior weights
-      if (prior_w_info.first == true)
+      if(has_GPS)
       {
-        v.center_weight_ = prior_w_info.second;
+        v.b_use_pose_center_ = true;
+        v.pose_center_ = pose_center;
+        // prior weights
+        if (prior_w_info.first == true)
+        {
+          v.center_weight_ = prior_w_info.second;
+        }
       }
-
+      if(has_ImgDirection)
+      {
+        v.b_use_pose_rotation_ = true;
+        v.pose_rotation_ = pose_rotation;
+        //no prior weights option for ImgDirection so far
+      }
       // Add the view to the sfm_container
       views[v.id_view] = std::make_shared<ViewPriors>(v);
     }

@@ -144,6 +144,7 @@ class EXIFInfo {
     double Altitude;                  // Altitude in meters, relative to sea level
     char AltitudeRef;                 // 0 = above sea level, -1 = below sea level
     double DOP;                       // GPS degree of precision (DOP)
+    double ImgDirection;              // Direction of the image when it was captured
     struct Coord_t {
       double degrees;
       double minutes;

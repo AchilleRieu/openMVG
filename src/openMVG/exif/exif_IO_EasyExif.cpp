@@ -225,5 +225,15 @@ bool Exif_IO_EasyExif::GPSAltitude(double * altitude) const
   return false;
 }
 
+bool Exif_IO_EasyExif::GPSImgDirection(double * imgdirection) const
+{
+  if ((*pimpl_).get().GeoLocation.ImgDirection != std::numeric_limits<double>::infinity())
+  {
+    (*imgdirection) = (*pimpl_).get().GeoLocation.ImgDirection;
+    return true;
+  }
+  return false;
+}
+
 } // namespace exif
 } // namespace openMVG

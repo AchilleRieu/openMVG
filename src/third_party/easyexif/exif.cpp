@@ -851,6 +851,14 @@ int easyexif::EXIFInfo::parseFromEXIFSegment(const unsigned char *buf,
                 buf + data + tiff_header_start, alignIntel);
           }
           break;
+
+        case 17:
+          // Direction of the image when it was captured. The range of values is from 0.00 to 359.99.
+          if ((format == 5 || format == 10)) {
+            this->GeoLocation.ImgDirection = parse_value<Rational>(
+                buf + data + tiff_header_start, alignIntel);
+          }
+          break;
       }
       offs += 12;
     }
