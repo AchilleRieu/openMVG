@@ -10,6 +10,7 @@ target_link_libraries(openMVG_main_SfMInit_ImageListing
     openMVG_features
     openMVG_sfm
     openMVG_exif
+    TinyEXIF
     ${STLPLUS_LIBRARY}
 )
 

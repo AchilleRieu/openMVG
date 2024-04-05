@@ -78,6 +78,10 @@ endif()
 # Exif data parsing
 add_subdirectory(easyexif)
 
+# XMP data parsing
+add_subdirectory(tinyxml2)
+add_subdirectory(TinyEXIF)
+
 # Fast corner detector
 add_subdirectory(fast)
 
