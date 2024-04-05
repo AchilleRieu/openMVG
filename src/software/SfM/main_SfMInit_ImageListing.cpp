@@ -22,6 +22,7 @@
 
 #include "third_party/cmdLine/cmdLine.h"
 #include "third_party/stlplus3/filesystemSimplified/file_system.hpp"
+#include "third_party/TinyEXIF/TinyEXIF.h"
 
 #include <fstream>
 #include <memory>
@@ -34,6 +35,7 @@ using namespace openMVG::exif;
 using namespace openMVG::geodesy;
 using namespace openMVG::image;
 using namespace openMVG::sfm;
+//using namespace TinyEXIF;
 
 /// Check that Kmatrix is a string like "f;0;ppx;0;f;ppy;0;0;1"
 /// With f,ppx,ppy as valid numerical value
@@ -119,6 +121,16 @@ bool getImgDirection
         // Add rotation to the GPS rotation array
         return(true);
       }
+    }
+  }
+
+  std::ifstream stream(filename, std::ios::binary);
+  if (stream) {
+    // parse image EXIF and XMP metadata
+    TinyEXIF::EXIFInfo imageEXIF(stream);
+    if (imageEXIF.Fields && imageEXIF.GeoLocation.YawDegree != DBL_MAX) {
+        pose_rotation(0,0) = imageEXIF.GeoLocation.YawDegree;
+        return(true);
     }
   }
   return false;
