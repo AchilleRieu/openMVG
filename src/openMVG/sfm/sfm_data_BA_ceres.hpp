@@ -19,6 +19,12 @@ namespace openMVG { namespace sfm { struct SfM_Data; } }
 namespace openMVG {
 namespace sfm {
 
+// template <typename T>
+// void getAngles(const T* R, T* euler);
+
+// template <typename T, int row_stride, int col_stride>
+// void getAngles(const MatrixAdapter<const T, row_stride, col_stride>& R, T* euler);
+
 /// Create the appropriate cost functor according the provided input camera intrinsic model
 /// Can be residual cost functor can be weighetd if desired (default 0.0 means no weight).
 ceres::CostFunction * IntrinsicsToCostFunction

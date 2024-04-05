@@ -40,6 +40,40 @@ namespace sfm {
 using namespace openMVG::cameras;
 using namespace openMVG::geometry;
 
+const double PI = 4.0 * atan( 1.0 ), RADTODEG = 180.0 / PI;
+
+template <typename T>
+void getAngles(const T* R, T* euler) {
+  getAngles(ceres::ColumnMajorAdapter3x3(R), euler);
+}
+
+template <typename T, int row_stride, int col_stride>
+void getAngles(const ceres::MatrixAdapter<const T, row_stride, col_stride>& R, T* euler)
+{
+   const double EPS = 1.0e-6;
+   T X{}, Y{}, Z{};
+                                           //    Matrix would be Rx.Ry.Rz
+    Y = ceres::asin( R(0,2) );                       // Unique angle in [-pi/2,pi/2]
+
+    if ( abs( abs( R(0,2) ) - 1.0 ) < EPS )   // Yuk! Gimbal lock. Infinite choice of X and Z
+    {
+        X = ceres::atan2( R(2,1), R(1,1) );          // One choice amongst many
+        Z = T(0.0);
+    }
+    else                                       // Unique solutions in (-pi,pi]
+    {
+        X = ceres::atan2( -R(1,2), R(2,2) );         // atan2 gives correct quadrant and unique solutions
+        Z = ceres::atan2( -R(0,1), R(0,0) );
+    }
+   
+   X *= RADTODEG;   Y *= RADTODEG;   Z *= RADTODEG;
+   
+   euler[0] = X;
+   euler[1] = Y;
+   euler[2] = Z;
+
+}
+
 // Ceres CostFunctor used for SfM pose center to GPS pose center minimization
 struct PoseCenterConstraintCostFunction
 {
@@ -74,6 +108,43 @@ struct PoseCenterConstraintCostFunction
 
     Eigen::Map<Vec3T> residuals_eigen(residuals);
     residuals_eigen = weight_.cast<T>().cwiseProduct(pose_center - pose_center_constraint_.cast<T>());
+
+    return true;
+  }
+};
+
+struct PoseRotationConstraintCostFunction
+{
+  double weight_;
+  Mat3 pose_rotation_constraint_; //voir type
+
+  PoseRotationConstraintCostFunction
+  (
+    const Mat3 & rotation,
+    const double & weight
+  ): weight_(weight), pose_rotation_constraint_(rotation)
+  {
+  }
+
+  template <typename T> bool
+  operator()
+  (
+    const T* const cam_extrinsics, // R_t
+    T* residuals
+  )
+  const
+  {
+    using Vec3T = Eigen::Matrix<T,3,1>;
+    using Mat3T = Eigen::Matrix<T,3,3>;
+    Eigen::Map<const Vec3T> cam_R(&cam_extrinsics[0]);
+
+    Mat3T R_mat;
+    Vec3T R_euler;
+    ceres::AngleAxisToRotationMatrix(cam_R.data(), R_mat.data());
+    getAngles(R_mat.data(), R_euler.data());
+
+    //Eigen::Map<VecT> residuals_eigen(residuals);
+    residuals[0] = T(weight_);//.cwiseProduct(Vec(R_euler(0) - pose_rotation_constraint_(0,0)).cast<T>());
 
     return true;
   }
@@ -179,6 +250,7 @@ bool Bundle_Adjustment_Ceres::Adjust
 
 
   double pose_center_robust_fitting_error = 0.0;
+  double pose_rotation_robust_fitting_error = 0.0;
   openMVG::geometry::Similarity3 sim_to_center;
   bool b_usable_prior = false;
   if (options.use_motion_priors_opt && sfm_data.GetViews().size() > 3)
@@ -188,13 +260,26 @@ bool Bundle_Adjustment_Ceres::Adjust
     {
       // Collect corresponding camera centers
       std::vector<Vec3> X_SfM, X_GPS;
+      std::vector<double> R_SfM, R_GPS;
       for (const auto & view_it : sfm_data.GetViews())
       {
         const sfm::ViewPriors * prior = dynamic_cast<sfm::ViewPriors*>(view_it.second.get());
-        if (prior != nullptr && prior->b_use_pose_center_ && sfm_data.IsPoseAndIntrinsicDefined(prior))
+        if (prior != nullptr && sfm_data.IsPoseAndIntrinsicDefined(prior))
         {
-          X_SfM.push_back( sfm_data.GetPoses().at(prior->id_pose).center() );
-          X_GPS.push_back( prior->pose_center_ );
+          if(prior->b_use_pose_center_)
+          {
+            X_SfM.push_back( sfm_data.GetPoses().at(prior->id_pose).center() );
+            X_GPS.push_back( prior->pose_center_ );
+          }
+          if(prior->b_use_pose_rotation_)
+          {
+            double R_SfM_euler[3];
+            double R_GPS_euler[3];
+            getAngles((const double*)sfm_data.GetPoses().at(prior->id_pose).rotation().data(), R_SfM_euler);
+            getAngles((const double*)prior->pose_rotation_.data(), R_GPS_euler);
+            R_SfM.push_back(R_SfM_euler[0]);
+            R_GPS.push_back(R_GPS_euler[0]);
+          }
         }
       }
       openMVG::geometry::Similarity3 sim;
@@ -218,6 +303,10 @@ bool Bundle_Adjustment_Ceres::Adjust
           Vec residual = (Eigen::Map<Mat3X>(X_SfM[0].data(), 3, X_SfM.size()) - Eigen::Map<Mat3X>(X_GPS[0].data(), 3, X_GPS.size())).colwise().norm();
           std::sort(residual.data(), residual.data() + residual.size());
           pose_center_robust_fitting_error = residual(residual.size()/2);
+
+          Vec residual_R = (Eigen::Map<Mat3X>(R_SfM.data(), 1, R_SfM.size())- Eigen::Map<Mat3X>(R_GPS.data(), 1, R_SfM.size())).colwise().norm();  
+          std::sort(residual_R.data(), residual_R.data() + residual_R.size());
+          pose_rotation_robust_fitting_error = residual(residual_R.size()/2);
 
           // Apply the found transformation to the SfM Data Scene
           openMVG::sfm::ApplySimilarity(sim, sfm_data);
@@ -456,18 +545,33 @@ bool Bundle_Adjustment_Ceres::Adjust
     for (const auto & view_it : sfm_data.GetViews())
     {
       const sfm::ViewPriors * prior = dynamic_cast<sfm::ViewPriors*>(view_it.second.get());
-      if (prior != nullptr && prior->b_use_pose_center_ && sfm_data.IsPoseAndIntrinsicDefined(prior))
+      if (prior != nullptr && sfm_data.IsPoseAndIntrinsicDefined(prior))
       {
-        // Add the cost functor (distance from Pose prior to the SfM_Data Pose center)
-        ceres::CostFunction * cost_function =
-          new ceres::AutoDiffCostFunction<PoseCenterConstraintCostFunction, 3, 6>(
-            new PoseCenterConstraintCostFunction(prior->pose_center_, prior->center_weight_));
+        if(prior->b_use_pose_center_)
+        {
+          // Add the cost functor (distance from Pose prior to the SfM_Data Pose center)
+          ceres::CostFunction * cost_function =
+            new ceres::AutoDiffCostFunction<PoseCenterConstraintCostFunction, 3, 6>(
+              new PoseCenterConstraintCostFunction(prior->pose_center_, prior->center_weight_));
 
-        problem.AddResidualBlock(
-          cost_function,
-          new ceres::HuberLoss(
-            Square(pose_center_robust_fitting_error)),
-                   &map_poses.at(prior->id_view)[0]);
+          problem.AddResidualBlock(
+            cost_function,
+            new ceres::HuberLoss(Square(pose_center_robust_fitting_error)),
+            &map_poses.at(prior->id_view)[0]);
+        }
+        if(prior->b_use_pose_rotation_)
+        {
+          // Add the cost functor (distance from rotation prior to the SfM_Data rotation)
+          ceres::CostFunction * cost_function =
+            new ceres::AutoDiffCostFunction<PoseRotationConstraintCostFunction, 1, 6>(
+              new PoseRotationConstraintCostFunction(prior->pose_rotation_, prior->rotation_weight_));
+
+            problem.AddResidualBlock(
+              cost_function,
+              new ceres::HuberLoss(
+              Square(pose_rotation_robust_fitting_error)),
+              &map_poses.at(prior->id_view)[0]); 
+        }
       }
     }
   }
