@@ -914,6 +914,7 @@ void easyexif::EXIFInfo::clear() {
   GeoLocation.LonComponents.minutes = std::numeric_limits<double>::infinity();
   GeoLocation.LonComponents.seconds = std::numeric_limits<double>::infinity();
   GeoLocation.LonComponents.direction = '?';
+  GeoLocation.ImgDirection = std::numeric_limits<double>::infinity();
 
   // LensInfo
   LensInfo.FocalLengthMax = 0;
