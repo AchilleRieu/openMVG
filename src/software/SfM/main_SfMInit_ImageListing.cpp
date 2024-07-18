@@ -103,9 +103,15 @@ bool getGPS
 bool getImgDirection
 (
   const std::string & filename,
+  const int & GPS_to_XYZ_method,
   Mat3 & pose_rotation
 )
 {
+  if(GPS_to_XYZ_method != 1){
+    //usage of Rotation data as a constrain during BA is only implemented with UTM data yet
+    //OPENMVG_LOG_INFO << "Cannot use Rotation data in ECEF coordinate system (yet to be implemented)";
+    return(false);
+  }
   std::unique_ptr<Exif_IO> exifReader(new Exif_IO_EasyExif);
   if (exifReader)
   {
@@ -128,9 +134,13 @@ bool getImgDirection
   if (stream) {
     // parse image EXIF and XMP metadata
     TinyEXIF::EXIFInfo imageEXIF(stream);
-    if (imageEXIF.Fields && imageEXIF.GeoLocation.YawDegree != DBL_MAX) {
-        pose_rotation(0,0) = imageEXIF.GeoLocation.YawDegree;
-        return(true);
+    if(imageEXIF.Fields){
+      if (imageEXIF.GeoLocation.YawDegree != DBL_MAX && imageEXIF.GeoLocation.PitchDegree != DBL_MAX && imageEXIF.GeoLocation.RollDegree != DBL_MAX) {
+          pose_rotation(0,0) = imageEXIF.GeoLocation.YawDegree;
+          pose_rotation(0,1) = imageEXIF.GeoLocation.PitchDegree;
+          pose_rotation(0,2) = imageEXIF.GeoLocation.RollDegree;
+          return(true);
+      }
     }
   }
   return false;
@@ -441,7 +451,7 @@ int main(int argc, char **argv)
     Vec3 pose_center;
     Mat3 pose_rotation;
     bool has_GPS = getGPS(sImageFilename, i_GPS_XYZ_method, pose_center);
-    bool has_ImgDirection = getImgDirection(sImageFilename, pose_rotation);
+    bool has_ImgDirection = getImgDirection(sImageFilename, i_GPS_XYZ_method, pose_rotation);
     if ((has_GPS || has_ImgDirection) && b_Use_pose_prior)
     {
       ViewPriors v(*iter_image, views.size(), views.size(), views.size(), width, height);
@@ -473,6 +483,7 @@ int main(int argc, char **argv)
       {
         v.b_use_pose_rotation_ = true;
         v.pose_rotation_ = pose_rotation;
+        v.rotation_weight_ = 1000.0;
         //no prior weights option for ImgDirection so far
       }
       // Add the view to the sfm_container
