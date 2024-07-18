@@ -109,6 +109,11 @@ struct PoseCenterConstraintCostFunction
     Eigen::Map<Vec3T> residuals_eigen(residuals);
     residuals_eigen = weight_.cast<T>().cwiseProduct(pose_center - pose_center_constraint_.cast<T>());
 
+    // OPENMVG_LOG_INFO << 
+    // "\nPosition value : x = " << pose_center.data()[0] << ", y = "<< pose_center.data()[1]<< ", z = "<< pose_center.data()[2]<< "\n" <<
+    // "Position prior : x = " << pose_center_constraint_(0) << ", y = "<< pose_center_constraint_(1)<< ", z = "<< pose_center_constraint_(2) << "\n" <<
+    // "Position error : " << residuals_eigen.data()[0] << ", y = "<< residuals_eigen.data()[1]<< ", z = "<< residuals_eigen.data()[2] << "\n";
+
     return true;
   }
 };
@@ -142,9 +147,20 @@ struct PoseRotationConstraintCostFunction
     Vec3T R_euler;
     ceres::AngleAxisToRotationMatrix(cam_R.data(), R_mat.data());
     getAngles(R_mat.data(), R_euler.data());
-
-    //Eigen::Map<VecT> residuals_eigen(residuals);
-    residuals[0] = T(weight_);//.cwiseProduct(Vec(R_euler(0) - pose_rotation_constraint_(0,0)).cast<T>());
+ 
+    if(R_euler(2) - pose_rotation_constraint_(0,0) > 180.0){
+      residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0)-static_cast<T>(360));
+    }
+    else if (R_euler(2) - pose_rotation_constraint_(0,0) <-180.0){
+      residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0)+static_cast<T>(360));
+    }
+    else{
+      residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0));
+    }
+    // OPENMVG_LOG_INFO << 
+    // "\nRotation values : Yaw = " << R_euler(2) << ", Pitch =" << R_euler(0) << ",  Roll =" << R_euler(1) << "\n" <<
+    // "Rotation prior : Yaw = " << pose_rotation_constraint_(0,0) << ", Pitch = " << pose_rotation_constraint_(0,1) << ", Roll = " << pose_rotation_constraint_(0,2) << "\n" <<
+    // "Rotation error : " << residuals[0] << "\n";
 
     return true;
   }
@@ -310,7 +326,7 @@ bool Bundle_Adjustment_Ceres::Adjust
 
           // Apply the found transformation to the SfM Data Scene
           openMVG::sfm::ApplySimilarity(sim, sfm_data);
-
+          
           // Move entire scene to center for better numerical stability
           Vec3 pose_centroid = Vec3::Zero();
           for (const auto & pose_it : sfm_data.poses)
