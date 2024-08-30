@@ -320,9 +320,9 @@ bool Bundle_Adjustment_Ceres::Adjust
           std::sort(residual.data(), residual.data() + residual.size());
           pose_center_robust_fitting_error = residual(residual.size()/2);
 
-          Vec residual_R = (Eigen::Map<Mat3X>(R_SfM.data(), 1, R_SfM.size())- Eigen::Map<Mat3X>(R_GPS.data(), 1, R_SfM.size())).colwise().norm();  
+          Vec residual_R = (Eigen::Map<Mat3X>(R_SfM.data(), 1, R_SfM.size())- Eigen::Map<Mat3X>(R_GPS.data(), 1, R_GPS.size())).colwise().norm();  
           std::sort(residual_R.data(), residual_R.data() + residual_R.size());
-          pose_rotation_robust_fitting_error = residual(residual_R.size()/2);
+          pose_rotation_robust_fitting_error = residual_R(residual_R.size()/2);
 
           // Apply the found transformation to the SfM Data Scene
           openMVG::sfm::ApplySimilarity(sim, sfm_data);
@@ -700,20 +700,34 @@ bool Bundle_Adjustment_Ceres::Adjust
 
       // Collect corresponding camera centers
       std::vector<Vec3> X_SfM, X_GPS;
+      std::vector<double> R_SfM, R_GPS;
       for (const auto & view_it : sfm_data.GetViews())
       {
         const sfm::ViewPriors * prior = dynamic_cast<sfm::ViewPriors*>(view_it.second.get());
-        if (prior != nullptr && prior->b_use_pose_center_ && sfm_data.IsPoseAndIntrinsicDefined(prior))
+        if (prior != nullptr && sfm_data.IsPoseAndIntrinsicDefined(prior))
         {
-          X_SfM.push_back( sfm_data.GetPoses().at(prior->id_pose).center() );
-          X_GPS.push_back( prior->pose_center_ );
+          if(prior->b_use_pose_center_)
+          {
+            X_SfM.push_back( sfm_data.GetPoses().at(prior->id_pose).center() );
+            X_GPS.push_back( prior->pose_center_ );
+          }
+          if(prior->b_use_pose_rotation_)
+          {
+            double R_SfM_euler[3];
+            double R_GPS_euler[3];
+            getAngles((const double*)sfm_data.GetPoses().at(prior->id_pose).rotation().data(), R_SfM_euler);
+            getAngles((const double*)prior->pose_rotation_.data(), R_GPS_euler);
+            R_SfM.push_back(R_SfM_euler[0]);
+            R_GPS.push_back(R_GPS_euler[0]);
+          }
         }
       }
+
       // Compute the registration fitting error (once BA with Prior have been used):
       if (X_GPS.size() > 3)
       {
         // Compute the median residual error
-        const Vec residual = (Eigen::Map<Mat3X>(X_SfM[0].data(), 3, X_SfM.size()) - Eigen::Map<Mat3X>(X_GPS[0].data(), 3, X_GPS.size())).colwise().norm();
+        const Vec residual = (Eigen::Map<Mat3X>(X_SfM[0].data(), 3, X_SfM.size()) - Eigen::Map<Mat3X>(X_GPS[0].data(), 3, X_SfM.size())).colwise().norm();  
         std::ostringstream os;
         os
           << "Pose prior statistics (user units):\n"
@@ -722,10 +736,23 @@ bool Bundle_Adjustment_Ceres::Adjust
         minMaxMeanMedian<Vec::Scalar>(residual.data(), residual.data() + residual.size(), os);
         OPENMVG_LOG_INFO << os.str();
       }
+
+      // Compute the registration fitting error (once BA with Prior have been used):
+      if (R_GPS.size() > 3){
+        const Vec residual_R = (Eigen::Map<Mat3X>(R_SfM.data(), 1, R_SfM.size())- Eigen::Map<Mat3X>(R_GPS.data(), 1, R_GPS.size())).colwise().norm();
+        std::ostringstream os;
+        os
+          << "Rotation prior statistics (user units):\n"
+          << " - Starting median fitting error: " << pose_rotation_robust_fitting_error << "\n"
+          << " - Final fitting error:\n";
+        minMaxMeanMedian<Vec::Scalar>(residual_R.data(), residual_R.data() + residual_R.size(), os);
+        OPENMVG_LOG_INFO << os.str();
+      }
+
     }
     return true;
   }
 }
 
-} // namespace sfm
+} // namespace sfm pose_rotation_robust_fitting_error
 } // namespace openMVG
