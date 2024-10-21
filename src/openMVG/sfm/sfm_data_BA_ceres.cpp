@@ -66,7 +66,7 @@ void getAngles(const ceres::MatrixAdapter<const T, row_stride, col_stride>& R, T
         Z = ceres::atan2( -R(0,1), R(0,0) );
     }
    
-   X *= RADTODEG;   Y *= RADTODEG;   Z *= RADTODEG;
+   //X *= RADTODEG;   Y *= RADTODEG;   Z *= RADTODEG;
    
    euler[0] = X;
    euler[1] = Y;
@@ -148,15 +148,17 @@ struct PoseRotationConstraintCostFunction
     ceres::AngleAxisToRotationMatrix(cam_R.data(), R_mat.data());
     getAngles(R_mat.data(), R_euler.data());
  
-    if(R_euler(2) - pose_rotation_constraint_(0,0) > 180.0){
-      residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0)-static_cast<T>(360));
-    }
-    else if (R_euler(2) - pose_rotation_constraint_(0,0) <-180.0){
-      residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0)+static_cast<T>(360));
-    }
-    else{
-      residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0));
-    }
+    // if(R_euler(2) - pose_rotation_constraint_(0,0) > 180.0){
+    //   residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0)-static_cast<T>(360));
+    // }
+    // else if (R_euler(2) - pose_rotation_constraint_(0,0) <-180.0){
+    //   residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0)+static_cast<T>(360));
+    // }
+    // else{
+    //   residuals[0] = T(weight_)*T(R_euler(2) - pose_rotation_constraint_(0,0));
+    // }
+
+    residuals[0] = T(weight_)*T(pow(cos(R_euler(2)) - cos(pose_rotation_constraint_(0,0)), 2) + pow(sin(R_euler(2)) - sin(pose_rotation_constraint_(0,0)),2));
     // OPENMVG_LOG_INFO << 
     // "\nRotation values : Yaw = " << R_euler(2) << ", Pitch =" << R_euler(0) << ",  Roll =" << R_euler(1) << "\n" <<
     // "Rotation prior : Yaw = " << pose_rotation_constraint_(0,0) << ", Pitch = " << pose_rotation_constraint_(0,1) << ", Roll = " << pose_rotation_constraint_(0,2) << "\n" <<
@@ -276,7 +278,7 @@ bool Bundle_Adjustment_Ceres::Adjust
     {
       // Collect corresponding camera centers
       std::vector<Vec3> X_SfM, X_GPS;
-      std::vector<double> R_SfM, R_GPS;
+      std::vector<Vec2> R_SfM, R_GPS;
       for (const auto & view_it : sfm_data.GetViews())
       {
         const sfm::ViewPriors * prior = dynamic_cast<sfm::ViewPriors*>(view_it.second.get());
@@ -293,8 +295,8 @@ bool Bundle_Adjustment_Ceres::Adjust
             double R_GPS_euler[3];
             getAngles((const double*)sfm_data.GetPoses().at(prior->id_pose).rotation().data(), R_SfM_euler);
             getAngles((const double*)prior->pose_rotation_.data(), R_GPS_euler);
-            R_SfM.push_back(R_SfM_euler[0]);
-            R_GPS.push_back(R_GPS_euler[0]);
+            R_SfM.push_back(Vec2(cos(R_SfM_euler[2]), sin(R_SfM_euler[2])));
+            R_GPS.push_back(Vec2(cos(R_GPS_euler[2]), sin(R_GPS_euler[2])));
           }
         }
       }
@@ -320,7 +322,7 @@ bool Bundle_Adjustment_Ceres::Adjust
           std::sort(residual.data(), residual.data() + residual.size());
           pose_center_robust_fitting_error = residual(residual.size()/2);
 
-          Vec residual_R = (Eigen::Map<Mat3X>(R_SfM.data(), 1, R_SfM.size())- Eigen::Map<Mat3X>(R_GPS.data(), 1, R_GPS.size())).colwise().norm();  
+          Vec residual_R = (Eigen::Map<Mat2X>(R_SfM[0].data(), 2, R_SfM.size())- Eigen::Map<Mat2X>(R_GPS[0].data(), 2, R_GPS.size())).colwise().squaredNorm();  
           std::sort(residual_R.data(), residual_R.data() + residual_R.size());
           pose_rotation_robust_fitting_error = residual_R(residual_R.size()/2);
 
@@ -700,7 +702,7 @@ bool Bundle_Adjustment_Ceres::Adjust
 
       // Collect corresponding camera centers
       std::vector<Vec3> X_SfM, X_GPS;
-      std::vector<double> R_SfM, R_GPS;
+      std::vector<Vec2> R_SfM, R_GPS;
       for (const auto & view_it : sfm_data.GetViews())
       {
         const sfm::ViewPriors * prior = dynamic_cast<sfm::ViewPriors*>(view_it.second.get());
@@ -717,8 +719,8 @@ bool Bundle_Adjustment_Ceres::Adjust
             double R_GPS_euler[3];
             getAngles((const double*)sfm_data.GetPoses().at(prior->id_pose).rotation().data(), R_SfM_euler);
             getAngles((const double*)prior->pose_rotation_.data(), R_GPS_euler);
-            R_SfM.push_back(R_SfM_euler[0]);
-            R_GPS.push_back(R_GPS_euler[0]);
+            R_SfM.push_back(Vec2(cos(R_SfM_euler[2]), sin(R_SfM_euler[2])));
+            R_GPS.push_back(Vec2(cos(R_GPS_euler[2]), sin(R_GPS_euler[2])));
           }
         }
       }
@@ -739,8 +741,8 @@ bool Bundle_Adjustment_Ceres::Adjust
 
       // Compute the registration fitting error (once BA with Prior have been used):
       if (R_GPS.size() > 3){
-        const Vec residual_R = (Eigen::Map<Mat3X>(R_SfM.data(), 1, R_SfM.size())- Eigen::Map<Mat3X>(R_GPS.data(), 1, R_GPS.size())).colwise().norm();
         std::ostringstream os;
+        const Vec residual_R = (Eigen::Map<Mat2X>(R_SfM[0].data(), 2, R_SfM.size())- Eigen::Map<Mat2X>(R_GPS[0].data(), 2, R_GPS.size())).colwise().squaredNorm();
         os
           << "Rotation prior statistics (user units):\n"
           << " - Starting median fitting error: " << pose_rotation_robust_fitting_error << "\n"
