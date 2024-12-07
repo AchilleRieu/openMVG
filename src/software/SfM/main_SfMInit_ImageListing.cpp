@@ -209,8 +209,8 @@ int main(int argc, char **argv)
   cmd.add( make_option('c', i_User_camera_model, "camera_model") );
   cmd.add( make_option('g', b_Group_camera_model, "group_camera_model") );
   cmd.add( make_switch('P', "use_pose_prior") );
-  cmd.add( make_option('Wp', sPriorPosWeights, "prior_position_weights"));
-  cmd.add( make_option('Wr', sPriorRotWeights, "prior_rotation_weights"));
+  cmd.add( make_option('w', sPriorPosWeights, "prior_position_weights"));
+  cmd.add( make_option('r', sPriorRotWeights, "prior_rotation_weights"));
   cmd.add( make_option('m', i_GPS_XYZ_method, "gps_to_xyz_method") );
 
   try {
@@ -235,8 +235,8 @@ int main(int argc, char **argv)
       << "\t 1-> (default) view can share some camera intrinsic parameters\n"
       << "\n"
       << "[-P|--use_pose_prior] Use pose prior if GPS EXIF pose is available\n"
-      << "[-Wp|--prior_position_weights] \"x;y;z;\" of weights for each dimension of the pose prior (default: 1.0)\n"
-      << "[-Wr|--prior_rotation_weights] Weights of the rotation prior (default: 1.0)\n"
+      << "[-w|--prior_position_weights] \"x;y;z;\" of weights for each dimension of the pose prior (default: 1.0)\n"
+      << "[-r|--prior_rotation_weights] Weights of the rotation prior (default: 1.0)\n"
       << "[-m|--gps_to_xyz_method] XZY Coordinate system:\n"
       << "\t 0: ECEF (default)\n"
       << "\t 1: UTM";
